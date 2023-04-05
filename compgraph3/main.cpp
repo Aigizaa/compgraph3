@@ -1,4 +1,4 @@
-#include <stdio.h>
+п»ї#include <stdio.h>
 #include <string.h>
 #include <assert.h>
 #include <math.h>
@@ -7,59 +7,78 @@
 
 #include "pipeline.h"
 #include "camera.h"
+#include "texture.h"
 
-#define WINDOW_WIDTH  1024
+#define WINDOW_WIDTH 1024
 #define WINDOW_HEIGHT 768
 
-GLuint VBO; //переменная для хранения указателя на буфер вершин
-GLuint IBO; //указатель на буферный объект для буфера индексов
-GLuint gWVPLocation; //указатель для доступа к всемирной матрице
+struct Vertex
+{
+    Vector3f m_pos;
+    Vector2f m_tex;
 
-Camera* pGameCamera = NULL; //указатель на камеру
+    Vertex() {}
 
-/*создадаём шейдерную программу*/
+    Vertex(Vector3f pos, Vector2f tex)
+    {
+        m_pos = pos;
+        m_tex = tex;
+    }
+};
+
+
+GLuint VBO; //РїРµСЂРµРјРµРЅРЅР°СЏ РґР»СЏ С…СЂР°РЅРµРЅРёСЏ СѓРєР°Р·Р°С‚РµР»СЏ РЅР° Р±СѓС„РµСЂ РІРµСЂС€РёРЅ
+GLuint IBO; //СѓРєР°Р·Р°С‚РµР»СЊ РЅР° Р±СѓС„РµСЂРЅС‹Р№ РѕР±СЉРµРєС‚ РґР»СЏ Р±СѓС„РµСЂР° РёРЅРґРµРєСЃРѕРІ
+GLuint gWVPLocation; //СѓРєР°Р·Р°С‚РµР»СЊ РґР»СЏ РґРѕСЃС‚СѓРїР° Рє РІСЃРµРјРёСЂРЅРѕР№ РјР°С‚СЂРёС†Рµ
+GLuint gSampler;
+Texture* pTexture = NULL; //СѓРєР°Р·Р°С‚РµР»СЊ РЅР° С‚РµРєСЃС‚СѓСЂСѓ
+Camera* pGameCamera = NULL; //СѓРєР°Р·Р°С‚РµР»СЊ РЅР° РєР°РјРµСЂСѓ
+
+/*СЃРѕР·РґР°РґР°С‘Рј С€РµР№РґРµСЂРЅСѓСЋ РїСЂРѕРіСЂР°РјРјСѓ*/
 static const char* pVS = "                                                          \n\
-#version 330 \n\
+#version 330                                                                        \n\
                                                                                     \n\
-layout (location = 0) in vec3 Position; \n\
+layout (location = 0) in vec3 Position;                                             \n\
+layout (location = 1) in vec2 TexCoord;                                             \n\
                                                                                     \n\
-uniform mat4 gWVP; \n\
+uniform mat4 gWVP;                                                                  \n\
                                                                                     \n\
-out vec4 Color; \n\
-                                                                                    \n\
-void main() \n\
-{ \n\
- gl_Position = gWVP * vec4(Position, 1.0); \n\
- Color = vec4(clamp(Position, 0.0, 1.0), 1.0); \n\
-}";
-
-static const char* pFS = "                                                          \n\
-#version 330 \n\
-                                                                                    \n\
-in vec4 Color;                                                                      \n\
-                                                                                    \n\
-out vec4 FragColor;                                                                 \n\
+out vec2 TexCoord0;                                                                 \n\
                                                                                     \n\
 void main()                                                                         \n\
 {                                                                                   \n\
-    FragColor = Color;                                                              \n\
+    gl_Position = gWVP * vec4(Position, 1.0);                                       \n\
+    TexCoord0 = TexCoord;                                                           \n\
 }";
 
+static const char* pFS = "                                                          \n\
+#version 330                                                                        \n\
+                                                                                    \n\
+in vec2 TexCoord0;                                                                  \n\
+                                                                                    \n\
+out vec4 FragColor;                                                                 \n\
+                                                                                    \n\
+uniform sampler2D gSampler;                                                         \n\
+                                                                                    \n\
+void main()                                                                         \n\
+{                                                                                   \n\
+    FragColor = texture2D(gSampler, TexCoord0.xy);                                  \n\
+}";
 
-/*Где-то в функции рендера мы должны вызвать камеру.
-  Это дает ей шанс для действий, если мышь не двигалась, но находится около границы экрана.*/
+/*Р“РґРµ-С‚Рѕ РІ С„СѓРЅРєС†РёРё СЂРµРЅРґРµСЂР° РјС‹ РґРѕР»Р¶РЅС‹ РІС‹Р·РІР°С‚СЊ РєР°РјРµСЂСѓ.
+  Р­С‚Рѕ РґР°РµС‚ РµР№ С€Р°РЅСЃ РґР»СЏ РґРµР№СЃС‚РІРёР№, РµСЃР»Рё РјС‹С€СЊ РЅРµ РґРІРёРіР°Р»Р°СЃСЊ, РЅРѕ РЅР°С…РѕРґРёС‚СЃСЏ РѕРєРѕР»Рѕ РіСЂР°РЅРёС†С‹ СЌРєСЂР°РЅР°.*/
 static void RenderSceneCB()
 {
     pGameCamera->OnRender();
 
     glClear(GL_COLOR_BUFFER_BIT);
 
-    /*используем статическую переменную типа float, которую мы будем по-немного увеличивать каждый вызов функции рендера*/
+    /*РёСЃРїРѕР»СЊР·СѓРµРј СЃС‚Р°С‚РёС‡РµСЃРєСѓСЋ РїРµСЂРµРјРµРЅРЅСѓСЋ С‚РёРїР° float, РєРѕС‚РѕСЂСѓСЋ РјС‹ Р±СѓРґРµРј РїРѕ-РЅРµРјРЅРѕРіРѕ СѓРІРµР»РёС‡РёРІР°С‚СЊ РєР°Р¶РґС‹Р№ РІС‹Р·РѕРІ С„СѓРЅРєС†РёРё СЂРµРЅРґРµСЂР°*/
     static float Scale = 0.0f;
 
     Scale += 0.1f;
 
-    /*Мы создаем объект конвейера, настраиваем его и отправляем результат в шейдер.*/
+    /*РњС‹ СЃРѕР·РґР°РµРј РѕР±СЉРµРєС‚ РєРѕРЅРІРµР№РµСЂР°, РЅР°СЃС‚СЂР°РёРІР°РµРј РµРіРѕ Рё РѕС‚РїСЂР°РІР»СЏРµРј СЂРµР·СѓР»СЊС‚Р°С‚ РІ С€РµР№РґРµСЂ.*/
     Pipeline p;
     p.Rotate(0.0f, Scale, 0.0f);
     p.WorldPos(0.0f, 0.0f, 3.0f);
@@ -69,88 +88,94 @@ static void RenderSceneCB()
     glUniformMatrix4fv(gWVPLocation, 1, GL_TRUE, (const GLfloat*)p.GetTrans());
 
     glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO); //обратно привязываем буфер, приготавливая его для отрисовки
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0); //говорим конвейеру как воспринимать данные внутри буфера
+    glEnableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO); //РѕР±СЂР°С‚РЅРѕ РїСЂРёРІСЏР·С‹РІР°РµРј Р±СѓС„РµСЂ, РїСЂРёРіРѕС‚Р°РІР»РёРІР°СЏ РµРіРѕ РґР»СЏ РѕС‚СЂРёСЃРѕРІРєРё
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0); //РіРѕРІРѕСЂРёРј РєРѕРЅРІРµР№РµСЂСѓ РєР°Рє РІРѕСЃРїСЂРёРЅРёРјР°С‚СЊ РґР°РЅРЅС‹Рµ РІРЅСѓС‚СЂРё Р±СѓС„РµСЂР°
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const GLvoid*)12);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO);
-
+    pTexture->Bind(GL_TEXTURE0);
     glDrawElements(GL_TRIANGLES, 12, GL_UNSIGNED_INT, 0);
 
-    glDisableVertexAttribArray(0); //отключаем атрибут вершины
+    glDisableVertexAttribArray(0); //РѕС‚РєР»СЋС‡Р°РµРј Р°С‚СЂРёР±СѓС‚ РІРµСЂС€РёРЅС‹
+    glDisableVertexAttribArray(1);
 
-    glutSwapBuffers(); //меняем фоновый буфер и буфер кадра местами
+    glutSwapBuffers(); //РјРµРЅСЏРµРј С„РѕРЅРѕРІС‹Р№ Р±СѓС„РµСЂ Рё Р±СѓС„РµСЂ РєР°РґСЂР° РјРµСЃС‚Р°РјРё
 }
 
-
-/*Здесь мы регистрируем новую функцию обратного вызова для получения специальных событий клавиатуры*/
+/*Р—РґРµСЃСЊ РјС‹ СЂРµРіРёСЃС‚СЂРёСЂСѓРµРј РЅРѕРІСѓСЋ С„СѓРЅРєС†РёСЋ РѕР±СЂР°С‚РЅРѕРіРѕ РІС‹Р·РѕРІР° РґР»СЏ РїРѕР»СѓС‡РµРЅРёСЏ СЃРїРµС†РёР°Р»СЊРЅС‹С… СЃРѕР±С‹С‚РёР№ РєР»Р°РІРёР°С‚СѓСЂС‹*/
 static void SpecialKeyboardCB(int Key, int x, int y)
 {
     pGameCamera->OnKeyboard(Key);
 }
 
-
-/*При нажатии 'q' мы выходим*/
+/*РџСЂРё РЅР°Р¶Р°С‚РёРё 'q' РјС‹ РІС‹С…РѕРґРёРј*/
 static void KeyboardCB(unsigned char Key, int x, int y)
 {
     switch (Key) {
     case 'q':
-        exit(0);
+        glutLeaveMainLoop();
     }
 }
+
 
 static void PassiveMouseCB(int x, int y)
 {
     pGameCamera->OnMouse(x, y);
 }
 
+
 static void InitializeGlutCallbacks()
 {
     glutDisplayFunc(RenderSceneCB);
-    glutIdleFunc(RenderSceneCB); //указываем функцию рендера в качестве ленивой
-    glutSpecialFunc(SpecialKeyboardCB);
+    glutIdleFunc(RenderSceneCB); //СѓРєР°Р·С‹РІР°РµРј С„СѓРЅРєС†РёСЋ СЂРµРЅРґРµСЂР° РІ РєР°С‡РµСЃС‚РІРµ Р»РµРЅРёРІРѕР№
 
-    /*Мы регистрируем 2 новых функции обратного вызова. Одна для мыши и другая для нажатия специальных клавиш*/
+     /*РњС‹ СЂРµРіРёСЃС‚СЂРёСЂСѓРµРј 2 РЅРѕРІС‹С… С„СѓРЅРєС†РёРё РѕР±СЂР°С‚РЅРѕРіРѕ РІС‹Р·РѕРІР°. РћРґРЅР° РґР»СЏ РјС‹С€Рё Рё РґСЂСѓРіР°СЏ РґР»СЏ РЅР°Р¶Р°С‚РёСЏ СЃРїРµС†РёР°Р»СЊРЅС‹С… РєР»Р°РІРёС€*/
+    glutSpecialFunc(SpecialKeyboardCB);
     glutPassiveMotionFunc(PassiveMouseCB);
+
     glutKeyboardFunc(KeyboardCB);
 }
 
+
 static void CreateVertexBuffer()
 {
-    Vector3f Vertices[4];
-    Vertices[0] = Vector3f(-1.0f, -1.0f, 0.5773f);
-    Vertices[1] = Vector3f(0.0f, -1.0f, -1.15475);
-    Vertices[2] = Vector3f(1.0f, -1.0f, 0.5773f);
-    Vertices[3] = Vector3f(0.0f, 1.0f, 0.0f);
+    Vertex Vertices[4] = { Vertex(Vector3f(-1.0f, -1.0f, 0.5773f), Vector2f(0.0f, 0.0f)),
+                           Vertex(Vector3f(0.0f, -1.0f, -1.15475), Vector2f(0.5f, 0.0f)),
+                           Vertex(Vector3f(1.0f, -1.0f, 0.5773f),  Vector2f(1.0f, 0.0f)),
+                           Vertex(Vector3f(0.0f, 1.0f, 0.0f),      Vector2f(0.5f, 1.0f)) };
 
     glGenBuffers(1, &VBO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(Vertices), Vertices, GL_STATIC_DRAW);
 }
 
+
 static void CreateIndexBuffer()
 {
-    /*Буфер индексов заполняется с помощью массива индексов. Индексы указывают на расположение вершин в вершинном буфере.*/
+    /*Р‘СѓС„РµСЂ РёРЅРґРµРєСЃРѕРІ Р·Р°РїРѕР»РЅСЏРµС‚СЃСЏ СЃ РїРѕРјРѕС‰СЊСЋ РјР°СЃСЃРёРІР° РёРЅРґРµРєСЃРѕРІ. РРЅРґРµРєСЃС‹ СѓРєР°Р·С‹РІР°СЋС‚ РЅР° СЂР°СЃРїРѕР»РѕР¶РµРЅРёРµ РІРµСЂС€РёРЅ РІ РІРµСЂС€РёРЅРЅРѕРј Р±СѓС„РµСЂРµ.*/
     unsigned int Indices[] = { 0, 3, 1,
                                1, 3, 2,
                                2, 3, 0,
-                               0, 2, 1 };
+                               1, 2, 0 };
 
-    /*Мы создаем, а затем заполняем буфер индексов используя массив индексов.*/
+    /*РњС‹ СЃРѕР·РґР°РµРј, Р° Р·Р°С‚РµРј Р·Р°РїРѕР»РЅСЏРµРј Р±СѓС„РµСЂ РёРЅРґРµРєСЃРѕРІ РёСЃРїРѕР»СЊР·СѓСЏ РјР°СЃСЃРёРІ РёРЅРґРµРєСЃРѕРІ.*/
     glGenBuffers(1, &IBO);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Indices), Indices, GL_STATIC_DRAW);
 }
 
+
 static void AddShader(GLuint ShaderProgram, const char* pShaderText, GLenum ShaderType)
 {
-    GLuint ShaderObj = glCreateShader(ShaderType); //начинаем процесс разработки шейдеров через создание программного объекта
+    GLuint ShaderObj = glCreateShader(ShaderType); //РЅР°С‡РёРЅР°РµРј РїСЂРѕС†РµСЃСЃ СЂР°Р·СЂР°Р±РѕС‚РєРё С€РµР№РґРµСЂРѕРІ С‡РµСЂРµР· СЃРѕР·РґР°РЅРёРµ РїСЂРѕРіСЂР°РјРјРЅРѕРіРѕ РѕР±СЉРµРєС‚Р°
 
-     /*проверяем ошибки*/
+    /*РїСЂРѕРІРµСЂСЏРµРј РѕС€РёР±РєРё*/
     if (ShaderObj == 0) {
         fprintf(stderr, "Error creating shader type %d\n", ShaderType);
         exit(0);
     }
 
-    /*создаём шейдер*/
+    /*СЃРѕР·РґР°С‘Рј С€РµР№РґРµСЂ*/
     const GLchar* p[1];
     p[0] = pShaderText;
     GLint Lengths[1];
@@ -166,8 +191,9 @@ static void AddShader(GLuint ShaderProgram, const char* pShaderText, GLenum Shad
         exit(1);
     }
 
-    glAttachShader(ShaderProgram, ShaderObj); //присоединяем скомпилированный объект шейдера к объекту программы
+    glAttachShader(ShaderProgram, ShaderObj); //РїСЂРёСЃРѕРµРґРёРЅСЏРµРј СЃРєРѕРјРїРёР»РёСЂРѕРІР°РЅРЅС‹Р№ РѕР±СЉРµРєС‚ С€РµР№РґРµСЂР° Рє РѕР±СЉРµРєС‚Сѓ РїСЂРѕРіСЂР°РјРјС‹
 }
+
 
 static void CompileShaders()
 {
@@ -204,40 +230,57 @@ static void CompileShaders()
 
     gWVPLocation = glGetUniformLocation(ShaderProgram, "gWVP");
     assert(gWVPLocation != 0xFFFFFFFF);
+    gSampler = glGetUniformLocation(ShaderProgram, "gSampler");
+    assert(gSampler != 0xFFFFFFFF);
 }
+
 
 int main(int argc, char** argv)
 {
-    glutInit(&argc, argv); //инициализируем GLUT
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA); // настраиваем некоторые опции GLUT
+    glutInit(&argc, argv); //РёРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј GLUT
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA); // РЅР°СЃС‚СЂР°РёРІР°РµРј РЅРµРєРѕС‚РѕСЂС‹Рµ РѕРїС†РёРё GLUT
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
-    glutInitWindowPosition(100, 100);
-    glutCreateWindow("Tutorial 15");
+    glutInitWindowPosition(10, 10);
+    glutCreateWindow("Tutorial 16");
 
-    /*Эта функция glut'а разрешает вашему приложению запускаться в полноэкранном режиме, называемом как 'игровой режим'.*/
+    /*Р­С‚Р° С„СѓРЅРєС†РёСЏ glut'Р° СЂР°Р·СЂРµС€Р°РµС‚ РІР°С€РµРјСѓ РїСЂРёР»РѕР¶РµРЅРёСЋ Р·Р°РїСѓСЃРєР°С‚СЊСЃСЏ РІ РїРѕР»РЅРѕСЌРєСЂР°РЅРЅРѕРј СЂРµР¶РёРјРµ, РЅР°Р·С‹РІР°РµРјРѕРј РєР°Рє 'РёРіСЂРѕРІРѕР№ СЂРµР¶РёРј'.*/
     glutGameModeString("1280x1024@32");
     glutEnterGameMode();
 
-    InitializeGlutCallbacks(); //присоединяем функцию RenderSceneCB к GLUT
+    InitializeGlutCallbacks(); //РїСЂРёСЃРѕРµРґРёРЅСЏРµРј С„СѓРЅРєС†РёСЋ RenderSceneCB Рє GLUT
 
-    /*Камера теперь автоматически установится в нужное положение*/
     pGameCamera = new Camera(WINDOW_WIDTH, WINDOW_HEIGHT);
 
-    /*Инициализируем GLEW и проверяем на ошибки*/
+    /*РРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј GLEW Рё РїСЂРѕРІРµСЂСЏРµРј РЅР° РѕС€РёР±РєРё*/
     GLenum res = glewInit();
     if (res != GLEW_OK) {
         fprintf(stderr, "Error: '%s'\n", glewGetErrorString(res));
         return 1;
     }
 
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f); //устанавливаем цвет, который будет использован во время очистки буфера кадра
+    glClearColor(1.0f, 1.0f, 1.0f, 0.0f); //СѓСЃС‚Р°РЅР°РІР»РёРІР°РµРј С†РІРµС‚, РєРѕС‚РѕСЂС‹Р№ Р±СѓРґРµС‚ РёСЃРїРѕР»СЊР·РѕРІР°РЅ РІРѕ РІСЂРµРјСЏ РѕС‡РёСЃС‚РєРё Р±СѓС„РµСЂР° РєР°РґСЂР°
+    /*РћРЅРё РІРєР»СЋС‡Р°СЋС‚ РѕС‚Р±СЂРѕСЃ Р·Р°РґРЅРµР№ РїРѕРІРµСЂС…РЅРѕСЃС‚Рё РґР»СЏ РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅРѕР№ РѕРїС‚РёРјРёР·Р°С†РёРё, Рё РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ С‡С‚Рѕ Р±С‹
+      РѕС‚Р±СЂР°РєРѕРІС‹РІР°С‚СЊ С‚СЂРµСѓРіРѕР»СЊРЅРёРєРё РґРѕ Р·Р°С‚СЂР°С‚РЅС‹С… РїСЂРѕС†РµСЃСЃРѕРІ СЂР°СЃС‚РµСЂРёР·Р°С†РёРё*/
+    glFrontFace(GL_CW);
+    glCullFace(GL_BACK);
+    glEnable(GL_CULL_FACE);
 
     CreateVertexBuffer();
     CreateIndexBuffer();
 
     CompileShaders();
 
-    glutMainLoop(); //передаём контроль GLUT'у
+    glUniform1i(gSampler, 0); //Р—РґРµСЃСЊ РјС‹ СѓСЃС‚Р°РЅР°РІР»РёРІР°РµРј РёРЅРґРµРєСЃС‹ РјРѕРґСѓР»РµР№ С‚РµРєСЃС‚СѓСЂС‹
+
+    Magick::InitializeMagick(nullptr); // <--- added this line
+
+    pTexture = new Texture(GL_TEXTURE_2D, "C:\\Users\\Windows 10\\Downloads\\texture.png"); //Р—РґРµСЃСЊ РјС‹ СЃРѕР·РґР°РµРј РѕР±СЉРµРєС‚ РўРµРєСЃС‚СѓСЂС‹ Рё Р·Р°РіСЂСѓР¶Р°РµРј РµРіРѕ
+
+    if (!pTexture->Load()) {
+        return 1;
+    }
+
+    glutMainLoop(); //РїРµСЂРµРґР°С‘Рј РєРѕРЅС‚СЂРѕР»СЊ GLUT'Сѓ
 
     return 0;
 }
