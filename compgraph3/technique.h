@@ -1,11 +1,11 @@
-#pragma once
 #ifndef TEXHNIQUE_H
 #define TEXHNIQUE_H
 
 #include <GL/glew.h>
 #include <list>
 
-/*Класс Technique поможет обернув основной функционал внутри себя*/
+#define INVALID_UNIFORM_LOCATION 0xFFFFFFFF
+
 class Technique
 {
 public:
